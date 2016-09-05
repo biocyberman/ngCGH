@@ -130,9 +130,9 @@ def main():
                         help='Like samtools, filter out all reads that are included by this flag value, 0 for unset [0]; hex (0x...), decimal, and octal (e.g., 0777) are accepted')
     parser.add_argument('-F','--required',default='0',
                         help='Like samtools, include only reads that are included by this flag value, 0 for unset [0]; hex (0x...), decimal, and octal (e.g., 0777) are accepted')
-    parser.add_argument('normalbam',
+    parser.add_argument('-N', '--normalbam', dest='normalbam',
                         help='The name of the bamfile for the normal comparison')
-    parser.add_argument('tumorbam',
+    parser.add_argument('-T', '--tumorbam', dest='tumorbam',
                         help='The name of the tumor sample bamfile')
     parser.add_argument('-r','--regions',dest='regions',
                         help='regions to which analysis should be restricted, either a bed file name or a single region in format chrN:XXX-YYY')
