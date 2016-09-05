@@ -5,6 +5,8 @@ import sys,math,os
 import collections
 import itertools
 import multiprocessing
+from pprint import pprint
+from numpy import std
 
 import pysam
 import ngcgh
@@ -16,10 +18,11 @@ class Counter:
 
 def readRegions(regionsFileName):
     regionsfile = open(regionsFileName,'r')
-    regions=collections.defaultdict(list)
+    # regions=collections.defaultdict(list)
+    regions=[]
     for line in regionsfile:
         wrds = line.strip().split("\t")
-        regions[wrds[0]].append((int(wrds[1]),int(wrds[2])))
+        regions.append((wrds[0], int(wrds[1]), int(wrds[2]), wrds[3]))
     regionsfile.close()
     return regions
 
@@ -41,6 +44,7 @@ def calculateRegion(args):
     chrN=region[0]
     startPos=region[1]
     stopPos=region[2]
+    geneName=region[3]
     logger.info('Working on %s:%d-%d' % (chrN,startPos,stopPos))
     n=0
     tfileiterator=tfile.fetch(chrN,startPos,stopPos)
@@ -66,7 +70,7 @@ def calculateRegion(args):
                 if(tread.is_duplicate): continue
                 j+=1
             if(j!=0):
-                results.append([chrN,startloc,nread.pos,winsize,j,math.log(float(j)/winsize,2)])
+                results.append([chrN,startloc,nread.pos,winsize,j,math.log(float(j)/winsize,2),geneName])
             n=0
     tfile.close()
     nfile.close()
@@ -94,18 +98,27 @@ def doNormalComparisonCGH(opts,logger):
     outfile=sys.stdout
     if(opts.outfile is not None):
         outfile=open(opts.outfile,'w')
-    regionlist = [(opts,(chrN,locs[0][0],locs[0][1])) for chrN,locs in regions.items()]
+    # regionlist = [(opts,(chrN,locs[0][0],locs[0][1])) for chrN,locs in regions.items()]
+    regionlist = [(opts, (region)) for region in regions]
+    logger.info('Regionlist len: %d' % (len(regionlist)))
+    # pout=open('debug.log','w')
+    # pprint (regionlist,pout)
     pool = multiprocessing.Pool(processes=opts.processes)
     logger.info('here')
     tmpresults = pool.map_async(calculateRegion, regionlist).get(99999999)
     results = list(itertools.chain(*tmpresults))
     # median-center data
     med = median([row[5] for row in results])
+    stdev = std([row[5] for row in results],ddof=1)
+    perc = opts.cutoff*stdev
     logger.info('Writing output')
+    outfile.write("# Median: %f\tStdev: %f\tCutoff: %d stdev\n" % (med, stdev, opts.cutoff))
+    outfile.write("# Chr\tStart\tEnd\tNormalCount\tTumorCount\tLog2RatioMinusMedian\tgeneName\n")
     for row in results:
-        row[5]=row[5]-med
-        # and write the file....
-        outfile.write("%s\t%d\t%d\t%d\t%d\t%f\n" % tuple(row))
+        if abs(row[5]) >= perc:
+            # and write the file....
+            row[5]=row[5]-med
+            outfile.write("%s\t%d\t%d\t%d\t%d\t%f\t%s\n" % tuple(row))
     outfile.close()
 
 def median(vect):
@@ -124,6 +137,8 @@ def main():
                         help='The number of reads captured from the normal sample for calculation of copy number')
     parser.add_argument('-o','--outfile',dest='outfile',
                         help='Output filename, default <stdout>')
+    parser.add_argument('-c','--cutoff',dest='cutoff',type=int,default=2,
+                        help='Number of standard deviations used to omit changes with absolute values below this cutoff')
     parser.add_argument('-l','--loglevel',dest='loglevel',type=int,default=10,
                         help='Logging Level, 1-15 with 1 being minimal logging and 15 being everything [10]')
     parser.add_argument('-f','--filter',default='0',
